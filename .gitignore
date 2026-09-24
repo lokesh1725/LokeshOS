@@ -13,12 +13,14 @@ boot/initramfs.img
 boot/vmlinuz
 
 # Sandbox runtime/root filesystem
-# The rootfs contains copied system/Python libraries.
 security/sandbox/rootfs/usr/lib/
 security/sandbox/rootfs/usr/bin/
 security/sandbox/rootfs/lib/
 security/sandbox/rootfs/lib64/
-
+security/sandbox/rootfs/app/
+# Authentication secrets
+security/auth/pin.hash
+boot/initramfs/security/auth/pin.hash
 # Runtime/generated sandbox data
 security/sandbox/rootfs/proc/
 security/sandbox/rootfs/tmp/
@@ -29,9 +31,7 @@ security/auth/pin_auth
 security/seccomp/seccomp_launcher
 security/seccomp/seccomp_launcher_test
 security/seccomp/seccomp_profile_test
-# Authentication secrets
-security/auth/pin.hash
-boot/initramfs/security/auth/pin.hash
+
 # Logs
 *.log
 
