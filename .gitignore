@@ -1,0 +1,53 @@
+# ==============================
+# LokeshOS Git Ignore
+# ==============================
+
+# Large/generated kernel build tree
+kernel/
+
+# Encrypted local development vault
+secure-vault.img
+
+# Generated boot images
+boot/initramfs.img
+boot/vmlinuz
+
+# Sandbox runtime/root filesystem
+# The rootfs contains copied system/Python libraries.
+security/sandbox/rootfs/usr/lib/
+security/sandbox/rootfs/usr/bin/
+security/sandbox/rootfs/lib/
+security/sandbox/rootfs/lib64/
+
+# Runtime/generated sandbox data
+security/sandbox/rootfs/proc/
+security/sandbox/rootfs/tmp/
+security/sandbox/rootfs/trace/
+
+# Compiled binaries
+security/auth/pin_auth
+security/seccomp/seccomp_launcher
+security/seccomp/seccomp_launcher_test
+security/seccomp/seccomp_profile_test
+# Authentication secrets
+security/auth/pin.hash
+boot/initramfs/security/auth/pin.hash
+# Logs
+*.log
+
+# Backup files
+*.backup
+*.final-backup
+*.no-new-privs-backup
+*.seccomp-backup
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Temporary/editor files
+*.tmp
+*.swp
+*~
+.vscode/

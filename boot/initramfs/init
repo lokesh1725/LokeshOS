@@ -1,0 +1,49 @@
+#!/bin/sh
+
+echo "=================================="
+echo "        LokeshOS Starting"
+echo "=================================="
+
+# Mount essential virtual filesystems
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+
+# Display system information
+echo "Kernel: $(uname -r)"
+echo "Architecture: $(uname -m)"
+echo "Initramfs: OK"
+echo "LokeshOS userspace: OK"
+
+echo
+echo "LokeshOS boot stage reached successfully."
+echo
+
+# Start LokeshOS authentication
+echo "Starting LokeshOS authentication..."
+echo
+
+/security/auth/pin_auth
+
+# Check authentication result
+if [ $? -ne 0 ]; then
+    echo
+    echo "Authentication failed."
+    echo "LokeshOS access denied."
+    echo "System halted."
+
+    # Keep PID 1 alive without providing a shell
+    while true
+    do
+        :
+    done
+fi
+
+# Authentication successful
+echo
+echo "Authentication successful."
+echo "Welcome to LokeshOS."
+echo
+
+# Start the LokeshOS shell
+exec /bin/sh
