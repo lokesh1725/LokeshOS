@@ -45,5 +45,7 @@ echo "Authentication successful."
 echo "Welcome to LokeshOS."
 echo
 
-# Start the LokeshOS shell
-exec /bin/sh
+# Ensure the default non-root account exists and start the shell as lokesh.
+mkdir -p /home/lokesh
+chown 1000:1000 /home/lokesh
+exec su -s /bin/sh lokesh -c 'cd /home/lokesh && exec /bin/sh'

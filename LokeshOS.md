@@ -766,6 +766,17 @@ execvp(argv[1], &argv[1]);
 
 This is currently a security prototype/test policy, not yet a final production syscall policy.
 
+Seccomp `getpid()` verification checklist:
+
+- [x] Seccomp source exists
+- [x] `getpid()` deny rule exists
+- [x] `getpid()` is configured with `SCMP_ACT_ERRNO(EPERM)`
+- [x] `seccomp_launcher` binary exists
+- [x] `seccomp_launcher` is included in the initramfs
+- [ ] Actual `getpid()` denial verified inside the booted LokeshOS guest
+
+Source-level Seccomp verification completed. The `getpid()` syscall is configured to return `EPERM`, and the `seccomp_launcher` binary is present in the initramfs. Runtime denial of `getpid()` inside the booted LokeshOS guest remains the next verification step.
+
 ---
 
 # 26. Seccomp Launcher
