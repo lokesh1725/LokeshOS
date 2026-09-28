@@ -46,6 +46,9 @@ echo "Welcome to LokeshOS."
 echo
 
 # Ensure the default non-root account exists and start the shell as lokesh.
+# BusyBox su fails on initgroups/setgroups in this initramfs environment,
+# so use the static runas helper to drop to UID/GID 1000 from root /init.
 mkdir -p /home/lokesh
 chown 1000:1000 /home/lokesh
-exec su -s /bin/sh lokesh -c 'cd /home/lokesh && exec /bin/sh'
+export HOME=/home/lokesh USER=lokesh LOGNAME=lokesh
+exec /bin/runas 1000 1000 /bin/sh -c 'cd /home/lokesh && exec /bin/sh'

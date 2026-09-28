@@ -1605,6 +1605,57 @@ Initial LokeshOS security and sandbox implementation
 
 ---
 
+# 48. Development Status — Non-Root Authenticated Boot (Verified)
+
+Verified runtime state of the LokeshOS boot security flow:
+
+- PIN authentication runs from `/init` before any interactive shell.
+- Failed PIN authentication does not provide a shell.
+- Successful authentication drops privileges to UID/GID `1000` (`lokesh`).
+- Interactive shell runs as `lokesh` with `HOME=/home/lokesh`.
+- `/home/lokesh` is owned by `1000:1000`.
+- Privilege drop uses the static `/bin/runas` helper from root `/init` (BusyBox `su` is unsuitable in this initramfs environment).
+- Seccomp `getpid()` restriction remains unchanged and returns `EPERM` (`RESULT: PASS`).
+
+Initramfs rebuild method:
+
+```bash
+cd ~/LokeshOS/boot/initramfs
+find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs.img
+```
+
+QEMU boot method:
+
+```bash
+cd ~/LokeshOS
+qemu-system-x86_64 \
+  -kernel boot/vmlinuz \
+  -initrd boot/initramfs.img \
+  -append "console=ttyS0" \
+  -nographic
+```
+
+Successful guest verification observation:
+
+```text
+uid=1000(lokesh) gid=1000(lokesh)
+lokesh
+HOME=/home/lokesh
+/home/lokesh
+getpid: return=-1 errno=1
+getpid blocked
+errno = EPERM
+RESULT: PASS
+```
+
+Related Step 1 commit:
+
+```text
+9ed2db4 Implement non-root authenticated session
+```
+
+---
+
 # End of Current LokeshOS Documentation
 
 Continue this file as the project develops. Preserve previous milestones and add new verified work chronologically.
