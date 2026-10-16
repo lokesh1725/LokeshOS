@@ -1477,10 +1477,10 @@ Syscall tracing:
 python3 security/sandbox/sandbox_trace_runner.py
 ```
 
-Seccomp launcher:
+Seccomp policy (built by `make`):
 
 ```bash
-security/seccomp/seccomp_profile_test
+build/initramfs/security/seccomp/seccomp_policy <program> [args...]
 ```
 
 Python dependencies:
@@ -1652,6 +1652,222 @@ Related Step 1 commit:
 
 ```text
 9ed2db4 Implement non-root authenticated session
+```
+
+---
+
+# 49. Development Status — Reproducible Build, Production Seccomp, Robust Init
+
+This milestone addresses the development directions in section 43: reproducible
+build, production seccomp policy, boot/init hardening, and host-side tests.
+
+## 49.1 Reproducible build system
+
+A top-level `Makefile` builds everything from source into a staging directory
+(`build/`) and never mutates the source tree. It replaces the manual
+`cpio`/`gcc`/copy steps.
+
+Key targets:
+
+```bash
+make            # compile C helpers + pack boot/initramfs.img
+make kernel     # copy kernel/linux/arch/x86/boot/bzImage -> boot/vmlinuz
+make image      # kernel + initramfs
+make run        # boot the image in QEMU (serial console)
+make test       # host-side security tests
+make check      # gcc -fsyntax-only on all C sources
+make clean      # remove build/ and boot/initramfs.img
+make distclean  # clean + remove boot/vmlinuz
+```
+
+Build steps performed:
+
+1. Copy `boot/initramfs/` (base tree) into `build/initramfs/`, excluding
+   generated binaries and the sandbox rootfs.
+2. Compile `pin_auth`, `runas` (static), `seccomp_launcher`, `getpid_test`, and
+   `seccomp_policy` into the staging tree.
+2. Copy `security/sandbox/rootfs` into the staged initramfs and install the
+   freshly built production seccomp policy at
+   `/security/sandbox/rootfs/security/seccomp/seccomp_policy`.
+3. Install `security/sandbox/sandbox_launch.sh` at
+   `/security/sandbox/sandbox_launch.sh`.
+4. Pack the staging tree with GNU cpio (`--reproducible`) and `gzip -9n` for a
+   deterministic `boot/initramfs.img`.
+
+The 111 MB duplicate rootfs that previously lived at
+`boot/initramfs/security/sandbox/rootfs/` was removed; the canonical tree is
+`security/sandbox/rootfs/` and is copied in at build time.
+
+## 49.2 Production seccomp policy
+
+New file `security/seccomp/seccomp_policy.c` is the canonical allowlist policy
+used by the sandbox:
+
+- Default action is `SCMP_ACT_ERRNO(EPERM)` (fail closed).
+- Only explicitly listed syscalls are allowed.
+- `getpid()` is intentionally allowed because Python's runtime requires it; the
+  separate `seccomp_launcher` (allow-all minus `getpid`) plus `getpid_test`
+  demonstrate the deny path.
+
+The sandbox runner and launcher script now reference
+`/security/seccomp/seccomp_policy` instead of the old
+`seccomp_profile_test` test binary.
+
+## 49.2.1 Seccomp resolution
+
+The earlier docs described seccomp `getpid()` as blocked. In practice the
+allowlist policy must permit `getpid()` for Python, so the two behaviours are
+now separated and documented:
+
+- `seccomp_policy.c` — production allowlist (permits `getpid`).
+- `seccomp_launcher.c` + `getpid_test.c` — deny-`getpid` verification.
+
+## 49.3 Robust init (`boot/initramfs/init`)
+
+The init script was hardened:
+
+- Mounts `proc`, `sysfs`, `devtmpfs`, `devpts`, and a `tmpfs` `/run`.
+- Reads `/proc/cmdline`:
+  - `lokeshos.nosandbox` skips the sandbox application path.
+  - `lokeshos.shell` skips authentication (development only).
+- Authentication fails closed (three attempts lock the system).
+- Non-busy idling after lockout (`sleep`, not a spin loop).
+- Runs the root-only sandbox launcher, then drops to the UID/GID `1000` shell.
+- On shell exit, powers off cleanly (BusyBox `poweroff`, sysrq fallback) and
+  never returns from PID 1.
+
+## 49.4 Host-side tests
+
+`tests/run_tests.sh` runs without a VM:
+
+- Shell syntax checks for `init` and `sandbox_launch.sh`.
+- Compiles the seccomp helpers.
+- Verifies the deny-`getpid` launcher returns `RESULT: PASS`.
+- Verifies the production policy allows `/bin/true` and denies a
+  non-allowlisted `pipe()` with `EPERM`.
+- Verifies sandbox rootfs invariants.
+- Verifies the packed initramfs image contains the expected components.
+
+Run:
+
+```bash
+make test
+```
+
+Expected current result:
+
+```text
+PASS=22 FAIL=0 SKIP=0
+```
+
+## 49.5 Files added or changed
+
+Added:
+
+```text
+Makefile
+security/seccomp/seccomp_policy.c
+tests/run_tests.sh
+README.md
+```
+
+Changed:
+
+```text
+boot/initramfs/init
+security/sandbox/sandbox_runner.py
+security/sandbox/sandbox_launch.sh
+.gitignore
+```
+
+Removed (generated duplicate):
+
+```text
+boot/initramfs/security/sandbox/rootfs/   (~111 MB)
+```
+
+## 49.6 Verified
+
+```text
+make            -> boot/initramfs.img (35M)
+make test       -> PASS=22 FAIL=0 SKIP=0
+seccomp_policy  -> python3 runs, non-allowlisted pipe() returns EPERM
+```
+
+QEMU boot (`make run`) remains a manual verification step.
+
+---
+
+# 50. Development Status — Bootable ISO Deliverable
+
+This milestone turns the build into a single bootable file.
+
+## 50.1 Bootable ISO
+
+`make iso` produces `boot/lokeshos.iso`, a BIOS-bootable ISO 9660 image
+containing the kernel, the initramfs, and a GRUB menu.
+
+```bash
+make iso        # -> boot/lokeshos.iso
+make run-iso    # boot it in QEMU
+```
+
+The GRUB menu entries are:
+
+```text
+LokeshOS                    normal authenticated boot
+LokeshOS (no sandbox)       lokeshos.nosandbox
+LokeshOS (recovery shell)   lokeshos.shell
+```
+
+`scripts/mkiso.sh` builds the ISO. It bootstraps GRUB (`i386-pc`) and
+`xorriso` into `build/iso-tools` using `apt-get download` + `dpkg-deb -x`
+when they are not installed system-wide, so no root privileges are required.
+
+Run directly:
+
+```bash
+qemu-system-x86_64 -m 1024 -cdrom boot/lokeshos.iso -nographic -boot d
+```
+
+## 50.2 Sandbox writable-data fix
+
+The sandboxed security test previously reported:
+
+```text
+Private app data write FAILED. ❌
+Reason: [Errno 13] Permission denied: '/data/app/sandbox-write-test.txt'
+```
+
+Cause: the writable `/data/app` directory and its pre-existing test files
+were owned by UID 1000, so the sandboxed application (UID 997) could not
+write to them.
+
+Fix: both launchers now recursively assign ownership of the writable data
+directory to the sandbox identity before the application runs:
+
+```sh
+chown -R "$APP_UID:$APP_GID" "$ROOTFS/data/app"
+```
+
+Verified in the guest:
+
+```text
+Sandbox UID: 997
+Sandbox GID: 985
+Host home directory is NOT visible. ✅
+System write blocked. ✅
+Private app data write successful. ✅
+RESULT: PASS
+uid=1000(lokesh) gid=1000(lokesh)
+```
+
+## 50.3 ISO build verified
+
+```text
+make test   -> PASS=22 FAIL=0 SKIP=0
+make iso    -> boot/lokeshos.iso (52M)
+QEMU BIOS   -> GRUB menu -> Linux -> LokeshOS init -> authentication prompt
 ```
 
 ---

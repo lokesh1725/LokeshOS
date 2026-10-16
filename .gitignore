@@ -11,6 +11,7 @@ secure-vault.img
 # Generated boot images
 boot/initramfs.img
 boot/vmlinuz
+boot/lokeshos.iso
 
 # Sandbox runtime/root filesystem
 security/sandbox/rootfs/usr/lib/
@@ -31,6 +32,11 @@ security/auth/pin_auth
 security/seccomp/seccomp_launcher
 security/seccomp/seccomp_launcher_test
 security/seccomp/seccomp_profile_test
+security/seccomp/seccomp_policy
+security/seccomp/getpid_test
+
+# Build staging area
+/build/
 
 # Logs
 *.log

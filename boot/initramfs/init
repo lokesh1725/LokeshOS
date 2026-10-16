@@ -1,54 +1,124 @@
 #!/bin/sh
+#
+# LokeshOS PID 1 (initramfs init).
+#
+# Flow:
+#   1. Mount the essential virtual filesystems.
+#   2. Print a boot banner.
+#   3. Authenticate with a PIN (/security/auth/pin_auth). Fail closed:
+#      three bad attempts lock the system.
+#   4. Optionally run the root-only sandbox application path.
+#   5. Drop to an unprivileged (UID/GID 1000) shell as the user "lokesh".
+#   6. On shell exit, power the machine off cleanly.
+#
+# Kernel command line options:
+#   lokeshos.nosandbox   Skip the sandbox application path.
+#   lokeshos.shell       Skip authentication and go straight to the shell
+#                        (development only).
+#
+# NOTE: BusyBox su fails on initgroups/setgroups in this initramfs, so the
+# static /bin/runas helper performs the privilege drop.
 
-echo "=================================="
-echo "        LokeshOS Starting"
-echo "=================================="
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
 
-# Mount essential virtual filesystems
-mount -t proc proc /proc
-mount -t sysfs sysfs /sys
-mount -t devtmpfs devtmpfs /dev
+banner() {
+    echo "=================================="
+    echo "        LokeshOS Starting"
+    echo "=================================="
+}
 
-# Display system information
-echo "Kernel: $(uname -r)"
-echo "Architecture: $(uname -m)"
-echo "Initramfs: OK"
-echo "LokeshOS userspace: OK"
-
-echo
-echo "LokeshOS boot stage reached successfully."
-echo
-
-# Start LokeshOS authentication
-echo "Starting LokeshOS authentication..."
-echo
-
-/security/auth/pin_auth
-
-# Check authentication result
-if [ $? -ne 0 ]; then
+poweroff_now() {
     echo
-    echo "Authentication failed."
-    echo "LokeshOS access denied."
-    echo "System halted."
-
-    # Keep PID 1 alive without providing a shell
-    while true
-    do
-        :
+    echo "LokeshOS shutting down..."
+    sync
+    # Try the common BusyBox/systemd targets, then fall back to the kernel
+    # power-off sysrq trigger. PID 1 must never fall through and return.
+    poweroff -f 2>/dev/null \
+        || busybox poweroff -f 2>/dev/null \
+        || echo o > /proc/sysrq-trigger 2>/dev/null \
+        || reboot -f 2>/dev/null
+    while true; do
+        sleep 3600
     done
-fi
+}
 
-# Authentication successful
-echo
-echo "Authentication successful."
-echo "Welcome to LokeshOS."
-echo
+mount_essentials() {
+    mount -t proc     proc     /proc 2>/dev/null
+    mount -t sysfs    sysfs    /sys  2>/dev/null
+    mount -t devtmpfs devtmpfs /dev  2>/dev/null
+    mkdir -p /dev/pts
+    mount -t devpts devpts /dev/pts 2>/dev/null
+    mkdir -p /run
+    mount -t tmpfs  tmpfs /run 2>/dev/null
+}
 
-# Ensure the default non-root account exists and start the shell as lokesh.
-# BusyBox su fails on initgroups/setgroups in this initramfs environment,
-# so use the static runas helper to drop to UID/GID 1000 from root /init.
-mkdir -p /home/lokesh
-chown 1000:1000 /home/lokesh
-export HOME=/home/lokesh USER=lokesh LOGNAME=lokesh
-exec /bin/runas 1000 1000 /bin/sh -c 'cd /home/lokesh && exec /bin/sh'
+cmdline_has() {
+    # Return 0 if $1 appears as a whitespace-separated token on the kernel
+    # command line (/proc/cmdline).
+    case " $(cat /proc/cmdline 2>/dev/null) " in
+        *" $1 "*) return 0 ;;
+        *)        return 1 ;;
+    esac
+}
+
+main() {
+    banner
+    mount_essentials
+
+    echo "Kernel:       $(uname -r)"
+    echo "Architecture: $(uname -m)"
+    echo "Initramfs:    OK"
+    echo "Userspace:    OK"
+    echo
+
+    if ! cmdline_has lokeshos.shell; then
+        echo "Starting LokeshOS authentication..."
+        echo
+        if ! /security/auth/pin_auth; then
+            echo
+            echo "Authentication failed."
+            echo "LokeshOS access denied."
+            echo "System halted."
+            # Idle as PID 1 without spawning a shell.
+            while true; do
+                sleep 3600
+            done
+        fi
+        echo
+        echo "Authentication successful."
+        echo "Welcome to LokeshOS."
+        echo
+    fi
+
+    # Root-only sandbox application path. Fail-closed for the sandbox itself;
+    # a failure here does not replace the authenticated UID/GID 1000 shell.
+    if cmdline_has lokeshos.nosandbox; then
+        echo "Sandbox application path: skipped (lokeshos.nosandbox)."
+        echo
+    elif [ -x /security/sandbox/sandbox_launch.sh ]; then
+        echo "Starting LokeshOS sandbox application path..."
+        echo
+        /security/sandbox/sandbox_launch.sh || \
+            echo "sandbox_launch: exited non-zero (continuing to shell)"
+        echo
+        echo "Sandbox application path finished."
+        echo
+    fi
+
+    # Default non-root account.
+    mkdir -p /home/lokesh
+    chown 1000:1000 /home/lokesh
+    HOME=/home/lokesh
+    USER=lokesh
+    LOGNAME=lokesh
+    export HOME USER LOGNAME
+
+    echo "Starting LokeshOS shell (user: lokesh, uid 1000)..."
+    echo
+    /bin/runas 1000 1000 /bin/sh -c 'cd /home/lokesh && exec /bin/sh'
+
+    poweroff_now
+}
+
+main

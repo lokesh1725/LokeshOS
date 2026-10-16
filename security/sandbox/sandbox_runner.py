@@ -21,8 +21,8 @@ ROOTFS = LOKESHOS_ROOT / "security" / "sandbox" / "rootfs"
 APP = "/app/test_app.py"
 PYTHON = "/usr/bin/python3.13"
 
-# Seccomp launcher path INSIDE the chroot.
-SECCOMP_LAUNCHER = "/security/seccomp/seccomp_profile_test"
+# Seccomp policy launcher path INSIDE the chroot.
+SECCOMP_LAUNCHER = "/security/seccomp/seccomp_policy"
 
 APP_USER = "lokeshos-app"
 APP_UID = "997"
@@ -44,11 +44,11 @@ def run_sandbox():
         ROOTFS
         / "security"
         / "seccomp"
-        / "seccomp_profile_test"
+        / "seccomp_policy"
     )
 
     if not host_seccomp.exists():
-        print("Seccomp launcher does not exist inside rootfs.")
+        print("Seccomp policy launcher does not exist inside rootfs.")
         print(f"Expected: {host_seccomp}")
         return
 
@@ -81,6 +81,7 @@ def run_sandbox():
             # Writable application data
             f"mount --bind {ROOTFS}/data/app {ROOTFS}/data/app && "
             f"mount -o remount,bind,rw {ROOTFS}/data/app && "
+            f"chown -R {APP_UID}:{APP_GID} {ROOTFS}/data/app && "
 
             # Enter rootfs
             f"chroot {ROOTFS} "
